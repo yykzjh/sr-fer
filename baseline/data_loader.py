@@ -2,11 +2,15 @@ from torch.utils.data import DataLoader, Dataset
 import random
 import torchvision.transforms as transforms
 from PIL import Image
+import os
+from glob import glob
+
+from torchvision.transforms import InterpolationMode
 
 
-def create_dataloader(args, img_list, n_threads=8, is_train=True):
+def create_dataloader(args, n_threads=0, is_train=True):
     return DataLoader(
-        SRDataset(args, img_list, args.lr_path, is_train),
+        SRDataset(args, is_train),
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=n_threads,
@@ -15,41 +19,45 @@ def create_dataloader(args, img_list, n_threads=8, is_train=True):
 
 
 class SRDataset(Dataset):
-    def __init__(self, args, img_list, lr_path, is_train):
+    def __init__(self, args, is_train):
         super(SRDataset, self).__init__()
         self.args = args
-        self.img_list = img_list
         self.is_train = is_train
-        self.lr_path = lr_path
+        self.random_trans = transforms.Compose([
+            transforms.RandomHorizontalFlip()  # 水平方向随机翻转
+        ])
         self.img_trans = self.img_transformer()
+
+        # 读取所有图像路径
+        self.img_list = glob(os.path.join(self.args.dataset_path, "**/*.jpg"), recursive=True)
 
     def __len__(self):
         return len(self.img_list)
 
     def img_transformer(self):
-        transform_list = []
-        if self.is_train:
-            transform_list.append(transforms.RandomHorizontalFlip())
-
-        transform_list.append(transforms.ToTensor())
-        transform_list.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
-
-        img2tensor = transforms.Compose(transform_list)
-
-        return img2tensor
+        return {
+            "GT": transforms.Compose([
+                transforms.Resize((224, 224)),  # InterpolationMode.BICUBIC
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ]),
+            "LQ": transforms.Compose([
+                transforms.Resize((28, 28)),  # InterpolationMode.BICUBIC
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ]),
+        }
 
     def __getitem__(self, index):
-        hr_path = self.img_list[index]
-        lr_path = self.lr_path + '/' + hr_path.split('/')[-1]
+        # 读取原图像
+        ori_img = Image.open(self.img_list[index])
+        ori_img = ori_img.convert('RGB')
 
-        lr_img = Image.open(lr_path)
-        hr_img = Image.open(hr_path)
+        # 先进行统一的随即变换
+        random_img = self.random_trans(ori_img)
 
-        # fix the seed for input and output
-        seed = random.randint(0, 2 ** 32)
-        random.seed(seed)
-        lr_img = self.img_trans(lr_img)
-        random.seed(seed)
-        hr_img = self.img_trans(hr_img)
+        # 再分别变换为低分辨率和高分辨率图像
+        lr_img = self.img_trans["LQ"](random_img)
+        hr_img = self.img_trans["GT"](random_img)
 
         return {'LQ': lr_img, 'GT': hr_img}

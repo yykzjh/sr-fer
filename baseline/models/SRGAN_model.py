@@ -20,10 +20,10 @@ class SRGANModel(BaseModel):
 
         # define networks and load pretrained models
         self.netG = networks.define_G(opt).to(self.device)
-        self.netG = DataParallel(self.netG)
+        # self.netG = DataParallel(self.netG)
         if self.is_train:
             self.netD = networks.define_D(opt).to(self.device)
-            self.netD = DataParallel(self.netD)
+            # self.netD = DataParallel(self.netD)
 
             self.netG.train()
             self.netD.train()
@@ -59,7 +59,7 @@ class SRGANModel(BaseModel):
                 self.cri_fea = None
             if self.cri_fea:  # load VGG perceptual loss
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
-                self.netF = DataParallel(self.netF)
+                # self.netF = DataParallel(self.netF)
 
             # GD gan loss
             self.cri_gan = GANLoss(train_opt.gan_type, 1.0, 0.0).to(self.device)
@@ -244,11 +244,11 @@ class SRGANModel(BaseModel):
         load_path_G = self.opt.pretrain_model_G
         if load_path_G is not None:
             logger.info('Loading model for G [{:s}] ...'.format(load_path_G))
-            self.load_network(load_path_G, self.netG, True)
+            self.load_network(load_path_G, self.netG, False)
         load_path_D = self.opt.pretrain_model_D
         if self.is_train and load_path_D is not None:
             logger.info('Loading model for D [{:s}] ...'.format(load_path_D))
-            self.load_network(load_path_D, self.netD, True)
+            self.load_network(load_path_D, self.netD, False)
 
     def save(self, iter_step):
         self.save_network(self.netG, 'G', iter_step)

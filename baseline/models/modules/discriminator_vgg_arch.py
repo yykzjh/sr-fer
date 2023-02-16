@@ -31,18 +31,18 @@ class Discriminator_VGG_128(nn.Module):
         self.conv4_1 = nn.Conv2d(nf * 8, nf * 8, 4, 2, 1, bias=False)
         self.bn4_1 = nn.BatchNorm2d(nf * 8, affine=True)
         # [256, 16, 16]
-        self.conv5_0 = nn.Conv2d(nf * 8, nf * 16, 3, 1, 1, bias=False)
-        self.bn5_0 = nn.BatchNorm2d(nf * 16, affine=True)
-        self.conv5_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
-        self.bn5_1 = nn.BatchNorm2d(nf * 16, affine=True)
-        # [512, 8, 8]
-        self.conv6_0 = nn.Conv2d(nf * 16, nf * 16, 3, 1, 1, bias=False)
-        self.bn6_0 = nn.BatchNorm2d(nf * 16, affine=True)
-        self.conv6_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
-        self.bn6_1 = nn.BatchNorm2d(nf * 16, affine=True)
-        # [512, 4, 4]
+        # self.conv5_0 = nn.Conv2d(nf * 8, nf * 16, 3, 1, 1, bias=False)
+        # self.bn5_0 = nn.BatchNorm2d(nf * 16, affine=True)
+        # self.conv5_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
+        # self.bn5_1 = nn.BatchNorm2d(nf * 16, affine=True)
+        # # [512, 8, 8]
+        # self.conv6_0 = nn.Conv2d(nf * 16, nf * 16, 3, 1, 1, bias=False)
+        # self.bn6_0 = nn.BatchNorm2d(nf * 16, affine=True)
+        # self.conv6_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
+        # self.bn6_1 = nn.BatchNorm2d(nf * 16, affine=True)
+        # # [512, 4, 4]
 
-        self.linear1 = nn.Linear(512 * 4 * 4, 100)
+        self.linear1 = nn.Linear(256 * 7 * 7, 100)
         self.linear2 = nn.Linear(100, 1)
 
         # activation function
@@ -64,11 +64,11 @@ class Discriminator_VGG_128(nn.Module):
         fea = self.lrelu(self.bn4_0(self.conv4_0(fea)))
         fea = self.lrelu(self.bn4_1(self.conv4_1(fea)))
 
-        fea = self.lrelu(self.bn5_0(self.conv5_0(fea)))
-        fea = self.lrelu(self.bn5_1(self.conv5_1(fea)))
-
-        fea = self.lrelu(self.bn6_0(self.conv6_0(fea)))
-        fea = self.lrelu(self.bn6_1(self.conv6_1(fea)))
+        # fea = self.lrelu(self.bn5_0(self.conv5_0(fea)))
+        # fea = self.lrelu(self.bn5_1(self.conv5_1(fea)))
+        #
+        # fea = self.lrelu(self.bn6_0(self.conv6_0(fea)))
+        # fea = self.lrelu(self.bn6_1(self.conv6_1(fea)))
 
         fea = fea.view(fea.size(0), -1)
         fea = self.lrelu(self.linear1(fea))
