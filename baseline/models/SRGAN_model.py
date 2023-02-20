@@ -244,11 +244,11 @@ class SRGANModel(BaseModel):
         load_path_G = self.opt.pretrain_model_G
         if load_path_G is not None:
             logger.info('Loading model for G [{:s}] ...'.format(load_path_G))
-            self.load_network(load_path_G, self.netG, False)
+            self.load_network(load_path_G, self.netG, True)
         load_path_D = self.opt.pretrain_model_D
         if self.is_train and load_path_D is not None:
             logger.info('Loading model for D [{:s}] ...'.format(load_path_D))
-            self.load_network(load_path_D, self.netD, False)
+            self.load_network(load_path_D, self.netD, True)
 
     def save(self, iter_step):
         self.save_network(self.netG, 'G', iter_step)

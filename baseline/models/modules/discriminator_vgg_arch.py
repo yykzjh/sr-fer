@@ -3,46 +3,37 @@ import torch.nn as nn
 import torchvision
 
 
-class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, nf):
-        super(Discriminator_VGG_128, self).__init__()
-        # [3, 512, 512]
+class Discriminator_VGG(nn.Module):
+    def __init__(self, in_nc, nf, in_size):
+        super(Discriminator_VGG, self).__init__()
+        # [3, 224, 224]
         self.conv0_0 = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
         self.conv0_1 = nn.Conv2d(nf, nf, 4, 2, 1, bias=False)
         self.bn0_1 = nn.BatchNorm2d(nf, affine=True)
-        # [32, 256, 256]
+        # [32, 112, 112]
         self.conv1_0 = nn.Conv2d(nf, nf * 2, 3, 1, 1, bias=True)
         self.bn1_0 = nn.BatchNorm2d(nf * 2, affine=True)
         self.conv1_1 = nn.Conv2d(nf * 2, nf * 2, 4, 2, 1, bias=False)
         self.bn1_1 = nn.BatchNorm2d(nf * 2, affine=True)
-        # [64, 128, 128]
+        # [64, 56, 56]
         self.conv2_0 = nn.Conv2d(nf * 2, nf * 2, 3, 1, 1, bias=True)
         self.bn2_0 = nn.BatchNorm2d(nf * 2, affine=True)
         self.conv2_1 = nn.Conv2d(nf * 2, nf * 2, 4, 2, 1, bias=False)
         self.bn2_1 = nn.BatchNorm2d(nf * 2, affine=True)
-        # [64, 64, 64]
+        # [64, 28, 28]
         self.conv3_0 = nn.Conv2d(nf * 2, nf * 4, 3, 1, 1, bias=False)
         self.bn3_0 = nn.BatchNorm2d(nf * 4, affine=True)
         self.conv3_1 = nn.Conv2d(nf * 4, nf * 4, 4, 2, 1, bias=False)
         self.bn3_1 = nn.BatchNorm2d(nf * 4, affine=True)
-        # [128, 32, 32]
+        # [128, 14, 14]
         self.conv4_0 = nn.Conv2d(nf * 4, nf * 8, 3, 1, 1, bias=False)
         self.bn4_0 = nn.BatchNorm2d(nf * 8, affine=True)
         self.conv4_1 = nn.Conv2d(nf * 8, nf * 8, 4, 2, 1, bias=False)
         self.bn4_1 = nn.BatchNorm2d(nf * 8, affine=True)
-        # [256, 16, 16]
-        # self.conv5_0 = nn.Conv2d(nf * 8, nf * 16, 3, 1, 1, bias=False)
-        # self.bn5_0 = nn.BatchNorm2d(nf * 16, affine=True)
-        # self.conv5_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
-        # self.bn5_1 = nn.BatchNorm2d(nf * 16, affine=True)
-        # # [512, 8, 8]
-        # self.conv6_0 = nn.Conv2d(nf * 16, nf * 16, 3, 1, 1, bias=False)
-        # self.bn6_0 = nn.BatchNorm2d(nf * 16, affine=True)
-        # self.conv6_1 = nn.Conv2d(nf * 16, nf * 16, 4, 2, 1, bias=False)
-        # self.bn6_1 = nn.BatchNorm2d(nf * 16, affine=True)
-        # # [512, 4, 4]
+        # [256, 7, 7]
 
-        self.linear1 = nn.Linear(256 * 7 * 7, 100)
+        out_size = in_size / 32
+        self.linear1 = nn.Linear(256 * out_size * out_size, 100)
         self.linear2 = nn.Linear(100, 1)
 
         # activation function
@@ -63,12 +54,6 @@ class Discriminator_VGG_128(nn.Module):
 
         fea = self.lrelu(self.bn4_0(self.conv4_0(fea)))
         fea = self.lrelu(self.bn4_1(self.conv4_1(fea)))
-
-        # fea = self.lrelu(self.bn5_0(self.conv5_0(fea)))
-        # fea = self.lrelu(self.bn5_1(self.conv5_1(fea)))
-        #
-        # fea = self.lrelu(self.bn6_0(self.conv6_0(fea)))
-        # fea = self.lrelu(self.bn6_1(self.conv6_1(fea)))
 
         fea = fea.view(fea.size(0), -1)
         fea = self.lrelu(self.linear1(fea))

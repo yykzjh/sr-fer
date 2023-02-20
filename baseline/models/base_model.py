@@ -8,7 +8,7 @@ from torch.nn.parallel import DistributedDataParallel
 class BaseModel():
     def __init__(self, opt, is_train):
         self.opt = opt
-        self.device = torch.device('cuda' if opt.gpu_ids is not None else 'cpu')
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.is_train = is_train
         self.schedulers = []
         self.optimizers = []
@@ -87,14 +87,13 @@ class BaseModel():
     def load_network(self, load_path, network, strict=True):
         if isinstance(network, nn.DataParallel) or isinstance(network, DistributedDataParallel):
             network = network.module
-        load_net = torch.load(load_path)
+        load_net = torch.load(load_path, map_location=lambda storage, loc: storage.cuda(self.device))
         load_net_clean = OrderedDict()  # remove unnecessary 'module.'
         for k, v in load_net.items():
-            if "linear1" not in k:
-                if k.startswith('module.'):
-                    load_net_clean[k[7:]] = v
-                else:
-                    load_net_clean[k] = v
+            if k.startswith('module.'):
+                load_net_clean[k[7:]] = v
+            else:
+                load_net_clean[k] = v
         network.load_state_dict(load_net_clean, strict=strict)
 
     def save_training_state(self, epoch, iter_step):
