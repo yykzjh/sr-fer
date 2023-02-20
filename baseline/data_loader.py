@@ -5,8 +5,6 @@ from PIL import Image
 import os
 from glob import glob
 
-from torchvision.transforms import InterpolationMode
-
 
 def create_dataloader(args, n_threads=0, is_train=True):
     return DataLoader(

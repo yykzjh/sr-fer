@@ -32,7 +32,7 @@ class Discriminator_VGG(nn.Module):
         self.bn4_1 = nn.BatchNorm2d(nf * 8, affine=True)
         # [256, 7, 7]
 
-        out_size = in_size / 32
+        out_size = int(in_size / 32)
         self.linear1 = nn.Linear(256 * out_size * out_size, 100)
         self.linear2 = nn.Linear(100, 1)
 

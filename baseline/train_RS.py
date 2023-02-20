@@ -17,7 +17,7 @@ def main():
     parser.add_argument('--gpu_ids', type=str, default='0')
 
     # 配置batch_size
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=32)
 
     # Adam优化器参数，G和D分开
     parser.add_argument('--lr_G', type=float, default=1e-4)
@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--D_nf', type=int, default=32)
 
     # 数据集根目录
-    parser.add_argument('--dataset_path', type=str, default='datasets/RAFDB/train/')
+    parser.add_argument('--dataset_path', type=str, default='/datasets/rafdb/train/')
     # 检查点存储路径
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/ESRGAN-V1/')
     # 训练状态存储路径，便于resume
@@ -104,12 +104,10 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # 加载数据集
-    train_loader = create_dataloader(args, n_threads=4, is_train=True)
+    train_loader = create_dataloader(args, n_threads=8, is_train=True)
 
     # 创建模型
     model = SRGANModel(args, is_train=True)
-    # 模型放到GPU
-    model.to(device)
 
 
     # 是否继续训练
@@ -152,10 +150,10 @@ def main():
             # 控制台输出日志信息
             if current_step % args.print_freq == 0:
                 logs = model.get_current_log()
-                message = '<epoch:{:3d}, iter:{:8,d}, lr:{:.3e}> '.format(
+                message = '<epoch:{:3d}, iter:{:8,d}, lr:{:.6f}> '.format(
                     epoch, current_step, model.get_current_learning_rate())
                 for k, v in logs.items():
-                    message += '{:s}: {:.4e} '.format(k, v)
+                    message += '{:s}: {:.6f} '.format(k, v)
                 print(message)
 
             # 存储结果
