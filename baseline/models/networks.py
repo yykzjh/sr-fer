@@ -3,6 +3,7 @@ import torch
 import logging
 import models.modules.discriminator_vgg_arch as Discriminator_arch
 import models.modules.RRDBNet_arch as RRDBNet_arch
+import models.modules.model3 as FER_arch
 
 logger = logging.getLogger('base')
 
@@ -10,6 +11,18 @@ logger = logging.getLogger('base')
 ####################
 # define network
 ####################
+### FER
+def define_FER(opt):
+    opt_net = opt
+    which_model = opt_net.which_model_FER
+
+    if which_model == "ResNet18_children":
+        netFER = FER_arch.ResNet18_children(num_classes=opt.n_classes)
+    else:
+        raise NotImplementedError('FER model [{:s}] not recognized'.format(which_model))
+    return netFER
+
+
 #### Generator
 def define_G(opt):
     opt_net = opt

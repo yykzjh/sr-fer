@@ -1,8 +1,30 @@
 import os
+import json
 import numpy as np
 from PIL import Image
 import cv2
 import torch
+
+
+
+
+def pre_write_txt(pred, file):
+    f = open(file, 'a', encoding='utf-8')
+    f.write(str(pred))
+    f.write('\n')
+    f.close()
+
+
+def load_json_file(file_path=r"./3DTooth.json"):
+    def key_2_int(x):
+        return {int(k): v for k, v in x.items()}
+
+    assert os.path.exists(file_path), "{} file not exist.".format(file_path)
+    json_file = open(file_path, 'r')
+    dict = json.load(json_file, object_hook=key_2_int)
+    json_file.close()
+
+    return dict
 
 
 def check_args(args, rank=0):

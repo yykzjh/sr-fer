@@ -4,8 +4,8 @@ import torch
 from torchvision import models
 # from transformer import TBAM
 # from vit_sp import TBAM
-from new_vit import TBAM
-from new_vit import Cls
+# from new_vit import TBAM
+# from new_vit import Cls
 
 class ResNet50(nn.Module):
     def __init__(self, pretrained=True, num_classes=7, drop_rate=0.0):
@@ -57,7 +57,7 @@ class ResNet18_children(nn.Module):
         super(ResNet18_children, self).__init__()
         self.drop_rate = drop_rate
         resnet = models.resnet18(pretrained)
-        checkpoint = torch.load('./resnet18_msceleb.pth') 
+        checkpoint = torch.load('./pretrain/resnet18_msceleb.pth')
         resnet.load_state_dict(checkpoint['state_dict'],strict=True)
         # # self.features = nn.Sequential(*list(resnet.children())[:-2])  # before avgpool 512x1
         # # #--------------

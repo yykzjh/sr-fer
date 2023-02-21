@@ -4,7 +4,8 @@ import argparse
 import random
 from utils import check_args, display_online_results
 from data_loader import create_dataloader
-from models.SRFER_BaselineModel import SRFERBaselineModel
+from models.SRGAN_model import SRGANModel
+import  matplotlib.pyplot as plt
 import torch
 
 
@@ -19,20 +20,23 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32)
 
     # Adam优化器参数，G和D分开
-    parser.add_argument('--lr_G', type=float, default=1e-5)
+    parser.add_argument('--lr_G', type=float, default=1e-4)
     parser.add_argument('--weight_decay_G', type=float, default=0)
     parser.add_argument('--beta1_G', type=float, default=0.9)
     parser.add_argument('--beta2_G', type=float, default=0.99)
+    parser.add_argument('--lr_D', type=float, default=1e-4)
+    parser.add_argument('--weight_decay_D', type=float, default=0)
+    parser.add_argument('--beta1_D', type=float, default=0.9)
+    parser.add_argument('--beta2_D', type=float, default=0.99)
     # 学习率调度器
     parser.add_argument('--lr_scheme', type=str, default='MultiStepLR')
 
     # 迭代总数
-    parser.add_argument('--start_epoch', type=int, default=0)
-    parser.add_argument('--end_epoch', type=int, default=500)
+    parser.add_argument('--niter', type=int, default=100000)
     # 学习率热身迭代数
     parser.add_argument('--warmup_iter', type=int, default=-1)
     # 学习率更新步长
-    parser.add_argument('--lr_steps', type=list, default=[250])
+    parser.add_argument('--lr_steps', type=list, default=[50000])
     # 学习率更新参数gamma
     parser.add_argument('--lr_gamma', type=float, default=0.5)
 
@@ -42,11 +46,19 @@ def main():
     # 感知损失函数计算方式和加权值
     parser.add_argument('--feature_criterion', type=str, default='l1')
     parser.add_argument('--feature_weight', type=float, default=1)
+    # gan损失函数计算方式和加权值
+    parser.add_argument('--gan_type', type=str, default='ragan')
+    parser.add_argument('--gan_weight', type=float, default=5e-3)
+
+    # 判别器每训练多少次，生成器训练一次
+    parser.add_argument('--D_update_ratio', type=int, default=1)
+    # 先训练判别器多少次
+    parser.add_argument('--D_init_iters', type=int, default=0)
 
     # 中间结果打印频率
-    parser.add_argument('--print_freq', type=int, default=50)
+    parser.add_argument('--print_freq', type=int, default=100)
     # 中间结果保存频率
-    parser.add_argument('--save_freq', type=int, default=100)
+    parser.add_argument('--save_freq', type=int, default=10000)
 
     # 低分辨率图像尺寸
     parser.add_argument('--lr_size', type=int, default=28)
@@ -60,17 +72,24 @@ def main():
     parser.add_argument('--G_nf', type=int, default=64)
     parser.add_argument('--nb', type=int, default=16)
 
+    # 判别器网络结构参数
+    parser.add_argument('--which_model_D', type=str, default='discriminator_vgg')
+    parser.add_argument('--D_in_nc', type=int, default=3)
+    parser.add_argument('--D_nf', type=int, default=32)
+
     # 数据集根目录
-    parser.add_argument('--dataset_path', type=str, default='/datasets/rafdb/')
+    parser.add_argument('--dataset_path', type=str, default='/datasets/rafdb/train/')
     # 检查点存储路径
-    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/SRFER-Baseline/')
+    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/ESRGAN-V1/')
     # 训练状态存储路径，便于resume
-    parser.add_argument('--training_state', type=str, default='checkpoints/SRFER-Baseline/state/')
+    parser.add_argument('--training_state', type=str, default='checkpoints/ESRGAN-V1/state/')
 
     # 是否resume
     parser.add_argument('--resume_state', type=str, default=None)
     # 加载的G网络预训练权重路径
-    parser.add_argument('--pretrain_model_G', type=str, default='pretrain/90000_G.pth')
+    parser.add_argument('--pretrain_model_G', type=str, default='')
+    # 加载的D网络预训练权重路径
+    parser.add_argument('--pretrain_model_D', type=str, default='')
 
     # 训练配置参数存储路径
     parser.add_argument('--setting_file', type=str, default='setting.txt')
@@ -88,7 +107,7 @@ def main():
     train_loader = create_dataloader(args, n_threads=8, is_train=True)
 
     # 创建模型
-    model = SRFERBaselineModel(args, is_train=True)
+    model = SRGANModel(args, is_train=True)
 
 
     # 是否继续训练
