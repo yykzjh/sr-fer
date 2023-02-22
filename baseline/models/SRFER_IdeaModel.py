@@ -13,6 +13,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import torch.autograd as autograd
 import models.networks as networks
 from models.modules.loss import LSR
@@ -134,7 +135,7 @@ class SRFERIdeaModel(object):
 
 
 
-    def cal_GradCAM(self, x, netFER, net_is_pretrain=False):
+    def cal_GradCAM(self, x, netFER, net_is_pretrain=False, weight=0.4):
         """
         计算输入的FER网络的各层的类激活图
         :param x: 从SR网络输出的超分辨率特征图
@@ -182,6 +183,8 @@ class SRFERIdeaModel(object):
 
         # 定义输出的类激活图列表
         heatmaps = []
+        # 初始化叠加原图的类激活图
+        image_heatmaps = []
         # 先判断得到的梯度和特征图个数是否一致
         assert len(grad_list) == len(feature_list), "grad and feature length error"
         # 循环遍历所有的梯度和对应的特征图
@@ -205,6 +208,10 @@ class SRFERIdeaModel(object):
                 print(heatmap)
             # 保存
             heatmaps.append(heatmap.squeeze(1))
+            # 叠加到原图
+            heatmap = F.interpolate(heatmap, size=x.size(-1), mode="bilinear", align_corners=False)
+            image_heatmap = heatmap * weight + x
+            image_heatmaps.append(image_heatmap)
 
         # 注销钩子
         for hook in hook_list:
@@ -212,7 +219,7 @@ class SRFERIdeaModel(object):
         # 清空梯度
         netFER.zero_grad()
 
-        return heatmaps, out
+        return heatmaps, image_heatmaps, out
 
 
     def optimize_parameters(self):
@@ -224,17 +231,17 @@ class SRFERIdeaModel(object):
         # G网络前向传播，生成超分辨率图像
         sr_image = self.netG(self.lr_image)
         # GradCAMFER前向传播，计算类激活图
-        GradCAMFER_heatmaps, _ = self.cal_GradCAM(sr_image, self.netGradCAMFER, net_is_pretrain=True)
+        GradCAMFER_heatmaps, GradCAMFER_image_heatmaps, _ = self.cal_GradCAM(self.hr_image.requires_grad_(), self.netGradCAMFER, net_is_pretrain=True)
         # FER网络前向传播，并计算类激活图
-        FER_heatmaps, logic_map = self.cal_GradCAM(sr_image, self.netFER, net_is_pretrain=False)
+        FER_heatmaps, FER_image_heatmaps, logic_map = self.cal_GradCAM(sr_image, self.netFER, net_is_pretrain=False)
 
         # 计算类激活图loss
         GradCAM_loss_list = []
         # 判断两个网络输出的类激活图是否一致
-        assert len(FER_heatmaps) == len(GradCAMFER_heatmaps), "heatmaps length error"
+        assert len(FER_image_heatmaps) == len(GradCAMFER_image_heatmaps), "heatmaps length error"
         # 遍历计算l2 loss
-        for i, FER_heatmap in enumerate(FER_heatmaps):
-            GradCAM_loss_list.append(self.GradCAM_cri(FER_heatmap, GradCAMFER_heatmaps[i]))
+        for i, FER_image_heatmap in enumerate(FER_image_heatmaps):
+            GradCAM_loss_list.append(self.GradCAM_cri(FER_image_heatmap, GradCAMFER_image_heatmaps[i]))
             # print(self.GradCAM_cri(FER_heatmap, GradCAMFER_heatmaps[i]))
         # 计算GradCAM loss均值
         GradCAM_loss = torch.FloatTensor(GradCAM_loss_list).to(self.device).mean()
