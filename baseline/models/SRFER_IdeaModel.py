@@ -13,6 +13,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.autograd as autograd
 import models.networks as networks
 from models.modules.loss import LSR
 
@@ -21,10 +22,10 @@ from models.modules.loss import LSR
 
 
 
-class SRFERBaselineModel(object):
+class SRFERIdeaModel(object):
 
     def __init__(self, opt, is_train=True):
-        super(SRFERBaselineModel, self).__init__()
+        super(SRFERIdeaModel, self).__init__()
         # 初始化参数
         self.opt = opt
         self.is_train = is_train
@@ -44,38 +45,25 @@ class SRFERBaselineModel(object):
         # 如果用于训练
         if self.is_train:
             # 定义损失函数
-            # 定义生成器G相关的损失函数
-            # 像素级损失函数
-            if self.opt.pixel_weight > 0:
-                g_pix_type = self.opt.pixel_criterion
-                if g_pix_type == 'l1':
-                    self.g_cri_pix = nn.L1Loss().to(self.device)
-                elif g_pix_type == 'l2':
-                    self.g_cri_pix = nn.MSELoss().to(self.device)
+            # 定义FER的GradCAM的损失函数
+            if self.opt.GradCAM_weight > 0:
+                GradCAM_cri_type = self.opt.GradCAM_criterion
+                # 定义GradCAM的特征图的损失值的计算方式
+                if GradCAM_cri_type == "l2":
+                    self.GradCAM_cri = nn.MSELoss().to(self.device)
                 else:
-                    raise NotImplementedError('Loss type [{:s}] not recognized.'.format(g_pix_type))
-                self.g_pix_w = self.opt.pixel_weight
+                    raise NotImplementedError('Loss type [{:s}] not recognized.'.format(GradCAM_cri_type))
+                self.GradCAM_w = self.opt.GradCAM_weight
             else:
-                self.g_cri_pix = None
-            # 感知损失函数
-            if self.opt.feature_weight > 0:
-                g_fea_type = self.opt.feature_criterion
-                if g_fea_type == 'l1':
-                    self.g_cri_fea = nn.L1Loss().to(self.device)
-                elif g_fea_type == 'l2':
-                    self.g_cri_fea = nn.MSELoss().to(self.device)
-                else:
-                    raise NotImplementedError('Loss type [{:s}] not recognized.'.format(g_fea_type))
-                self.g_fea_w = self.opt.feature_weight
-            else:
-                self.g_cri_fea = None
-            if self.g_cri_fea:
-                # 初始化VGG主干特征提取网络
-                self.netF = networks.define_F(opt, use_bn=False).to(self.device)
-            # 初始化G损失函数加权值
-            self.g_cri_w = self.opt.G_weight
+                self.GradCAM_cri = None
+            # 定义计算GradCAM损失值用到的网络
+            if self.GradCAM_cri:
+                # 初始化已经与训练好的FER网络
+                self.netGradCAMFER = networks.define_FER(self.opt).to(self.device)
+                self.netGradCAMFER.load_state_dict(torch.load(self.opt.GradCAM_pretrain_model_FER))
+                self.netGradCAMFER.eval()
 
-            # 定义FER相关的损失函数
+            # 定义FER的分类相关的损失函数
             if self.opt.FER_weight > 0:
                 fer_cri_type = self.opt.fer_criterion
                 if fer_cri_type == "lsr":
@@ -142,6 +130,80 @@ class SRFERBaselineModel(object):
         self.log_dict["cur_batch_size"] = len(self.label)
 
 
+
+
+    def cal_GradCAM(self, x, netFER, net_is_pretrain=False):
+        """
+        计算输入的FER网络的各层的类激活图
+        :param x: 从SR网络输出的超分辨率特征图
+        :param netFER: FER网络，可以是预训练好的FER，也可能是正在训练的FER
+        :param net_is_pretrain: 传入的网络是不是预训练好的网络
+        :return: 列表和网络输出，存储各层的类激活图heatmap
+        """
+
+        # 先初始化存储梯度的列表
+        grad_list = []
+        # 初始化存储钩子的列表，用于释放钩子
+        hook_list = []
+        # 初始化保存中间特征图的列表
+        feature_list = []
+
+        # 先解析输入网络的各层，便于分部计算设定钩子
+        children_layers = list(netFER.children())
+        assert len(children_layers) == 7, "submodules length error"
+
+        out = x
+        # 循环执行各层的运算，在指定位置注册钩子
+        for i, layer in enumerate(children_layers):
+            # 先运算
+            out = layer(out)
+            # 如果是前五层的卷积层, 需要注册钩子
+            if i < 5:
+                # 注册钩子
+                hook_list.append(out.register_hook(lambda grad: grad_list.append(grad)))
+                # 保存特征图
+                feature_list.append(out)
+            if i == 5:
+                out = torch.flatten(out, 1)
+
+        # 提取out中最大类别的输出数值
+        pred_index = torch.argmax(out, 1)
+        pred_value = out.gather(dim=-1, index=pred_index.unsqueeze(1)).squeeze(1)
+
+        # 反向传播到x,获取中间参数的梯度
+        if net_is_pretrain:
+            _ = autograd.grad(pred_value, x, grad_outputs=torch.ones_like(pred_value), retain_graph=False)[0]
+        else:
+            _ = autograd.grad(pred_value, x, grad_outputs=torch.ones_like(pred_value), retain_graph=True, create_graph=True)[0]
+
+        # 定义输出的类激活图列表
+        heatmaps = []
+        # 先判断得到的梯度和特征图个数是否一致
+        assert len(grad_list) == len(feature_list), "grad and feature length error"
+        # 循环遍历所有的梯度和对应的特征图
+        feature_list_len = len(feature_list)
+        for i in range(len(feature_list)):
+            # 计算梯度的通道分数
+            pool_grad = torch.nn.functional.adaptive_avg_pool2d(grad_list[feature_list_len - 1 - i], (1, 1))
+            # 分数张量和特征图相乘得到类激活图
+            heatmap = pool_grad * feature_list[i]
+
+            # 类激活图的通道维度取平均
+            heatmap = torch.mean(heatmap, dim=1)
+            # 类激活图ReLU
+            heatmap = torch.maximum(heatmap, torch.zeros_like(heatmap))
+            # 类激活图归一化
+            heatmap /= torch.nn.AdaptiveMaxPool2d((1, 1))(heatmap)
+            # 保存
+            heatmaps.append(heatmap)
+
+        # 注销钩子
+        for hook in hook_list:
+            hook.remove()
+
+        return heatmaps, out
+
+
     def optimize_parameters(self):
 
         # 网络参数梯度清零
@@ -150,25 +212,31 @@ class SRFERBaselineModel(object):
 
         # G网络前向传播，生成超分辨率图像
         sr_image = self.netG(self.lr_image)
-        # 计算G网络的loss
-        if self.g_cri_pix:
-            g_pix_loss = self.g_cri_pix(sr_image, self.hr_image)
-        if self.g_cri_fea:
-            hr_image_fea = self.netF(self.hr_image).detach()
-            sr_image_fea = self.netF(sr_image)
-            g_fea_loss = self.g_cri_fea(sr_image_fea, hr_image_fea)
-        # 计算G网络的总loss
-        g_loss = self.g_pix_w * g_pix_loss + self.g_fea_w * g_fea_loss
+        # FER网络前向传播，并计算类激活图
+        FER_heatmaps, logic_map = self.cal_GradCAM(sr_image, self.netFER, net_is_pretrain=False)
+        # GradCAMFER前向传播，计算类激活图
+        GradCAMFER_heatmaps, _ = self.cal_GradCAM(sr_image, self.netGradCAMFER, net_is_pretrain=True)
+        # 网络参数梯度清零
+        for optimizer in self.optimizers:
+            optimizer.zero_grad()
 
-        # FER网络前向传播，对生成的超分辨率图像进行人脸表情识别
-        logic_map = self.netFER(sr_image, True)
+        # 计算类激活图loss
+        GradCAM_loss_list = []
+        # 判断两个网络输出的类激活图是否一致
+        assert len(FER_heatmaps) == len(GradCAMFER_heatmaps), "heatmaps length error"
+        # 遍历计算l2 loss
+        for i, FER_heatmap in enumerate(FER_heatmaps):
+            GradCAM_loss_list.append(self.GradCAM_cri(FER_heatmap, GradCAMFER_heatmaps[i]))
+        # 计算GradCAM loss均值
+        GradCAM_loss = torch.FloatTensor(GradCAM_loss_list).to(self.device).mean()
+
         # 计算FER网络的loss
         fer_loss = 0
         if self.fer_cri:
             fer_loss = self.fer_cri(logic_map, self.label)
 
         # 计算总loss
-        loss = self.g_cri_w * g_loss + self.fer_cri_w * fer_loss
+        loss = self.GradCAM_w * GradCAM_loss + self.fer_cri_w * fer_loss
 
         # 反向传播
         loss.backward()
@@ -182,9 +250,7 @@ class SRFERBaselineModel(object):
         step_acc = (predict_y == self.label).sum().cpu().item()
 
         # 记录所有中间结果
-        self.log_dict["g_pix_loss"] = g_pix_loss.cpu().item()
-        self.log_dict["g_fea_loss"] = g_fea_loss.cpu().item()
-        self.log_dict["g_loss"] = g_loss.cpu().item()
+        self.log_dict["GradCAM_loss"] = GradCAM_loss.cpu().item()
         self.log_dict["fer_loss"] = fer_loss.cpu().item()
         self.log_dict["loss"] = loss.cpu().item()
         self.log_dict["step_acc"] = step_acc
@@ -215,9 +281,9 @@ class SRFERBaselineModel(object):
         n = sum(map(lambda x: x.numel(), self.netFER.parameters()))
         print('Network FER structure: {}, with parameters: {:,d}'.format(self.netFER.__class__.__name__, n))
 
-        if self.is_train and self.g_cri_fea:
-            n = sum(map(lambda x: x.numel(), self.netF.parameters()))
-            print('Network F structure: {}, with parameters: {:,d}'.format(self.netF.__class__.__name__, n))
+        if self.is_train and self.GradCAM_cri:
+            n = sum(map(lambda x: x.numel(), self.netGradCAMFER.parameters()))
+            print('Network GradCAMFER structure: {}, with parameters: {:,d}'.format(self.netGradCAMFER.__class__.__name__, n))
 
 
     def load(self, checkpoint_state_dict=None):

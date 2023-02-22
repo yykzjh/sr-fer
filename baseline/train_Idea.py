@@ -4,8 +4,9 @@ import argparse
 import random
 from utils import check_args, pre_write_txt
 from data_loader import create_dataloader
-from models.SRFER_BaselineModel import SRFERBaselineModel
+from models.SRFER_IdeaModel import SRFERIdeaModel
 import torch
+torch.backends.cudnn.enabled = False
 
 
 def main():
@@ -16,11 +17,11 @@ def main():
     parser.add_argument('--gpu_ids', type=str, default='0')
 
     # 数据集根目录
-    parser.add_argument('--dataset_path', type=str, default='/datasets/rafdb/')
+    parser.add_argument('--dataset_path', type=str, default='./datasets/RAFDB/')
     # 检查点存储路径
-    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/SRFER-Baseline/')
+    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/SRFER-Idea/')
     # 训练状态存储路径，便于resume
-    parser.add_argument('--training_state', type=str, default='checkpoints/SRFER-Baseline/state/')
+    parser.add_argument('--training_state', type=str, default='checkpoints/SRFER-Idea/state/')
 
     # 低分辨率图像尺寸
     parser.add_argument('--lr_size', type=int, default=28)
@@ -28,7 +29,7 @@ def main():
     parser.add_argument('--hr_size', type=int, default=224)
 
     # 配置batch_size
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=1)
 
     # 生成器网络结构参数
     parser.add_argument('--which_model_G', type=str, default='RRDBNet')
@@ -39,15 +40,12 @@ def main():
     # FER网络结构参数
     parser.add_argument('--which_model_FER', type=str, default='ResNet18_children')
     parser.add_argument('--n_classes', type=int, default=7)
+    # 指定计算GradCAM的与训练好的FER模型权重文件路径
+    parser.add_argument('--GradCAM_pretrain_model_FER', type=str, default='./pretrain/AlexNet3_vit2.pth')
 
-    # 像素级损失函数计算方式和加权值
-    parser.add_argument('--pixel_criterion', type=str, default='l1')
-    parser.add_argument('--pixel_weight', type=float, default=1e-2)
-    # 感知损失函数计算方式和加权值
-    parser.add_argument('--feature_criterion', type=str, default='l1')
-    parser.add_argument('--feature_weight', type=float, default=1)
-    # 生成器G的损失函数整体加权值
-    parser.add_argument('--G_weight', type=float, default=0.1)
+    # GradCAM损失函数的计算方式和加权值
+    parser.add_argument('--GradCAM_criterion', type=str, default='l2')
+    parser.add_argument('--GradCAM_weight', type=float, default=0.8)
     # 分类损失函数计算方式和加权值
     parser.add_argument('--fer_criterion', type=str, default='lsr')  # Label Smoothing Regularization(LSR),标签平滑正则化
     parser.add_argument('--FER_weight', type=float, default=1)
@@ -79,7 +77,7 @@ def main():
     # 是否resume
     parser.add_argument('--resume_state', type=str, default=None)
     # 加载的G网络预训练权重路径
-    parser.add_argument('--pretrain_model_G', type=str, default='pretrain/latest_G.pth')
+    parser.add_argument('--pretrain_model_G', type=str, default='./pretrain/latest_G.pth')
     # 加载的FER网络训练权重路径
     parser.add_argument('--pretrain_model_FER', type=str, default='')
 
@@ -109,7 +107,7 @@ def main():
     val_loader = create_dataloader(args, n_threads=8, is_train=False, dataset="SRFER")
 
     # 创建模型
-    model = SRFERBaselineModel(args, is_train=True)
+    model = SRFERIdeaModel(args, is_train=True)
 
     # 是否继续训练
     if args.resume_state is not None:
@@ -135,9 +133,7 @@ def main():
     pre_write_txt('Start training from epoch: {:d}, end of epoch: {:d}'.format(start_epoch, args.end_epoch), args.log_file)
     for epoch in range(start_epoch, args.end_epoch):
         # 初始化每个epoch训练部分需要统计的信息
-        g_pix_loss = 0.
-        g_fea_loss = 0.
-        g_loss = 0.
+        GradCAM_loss = 0.
         fer_loss = 0.
         loss = 0.
         train_accuracy = 0.
@@ -154,9 +150,7 @@ def main():
 
             # 获取中间结果
             log = model.get_current_log()
-            g_pix_loss += log["g_pix_loss"] * log["cur_batch_size"]
-            g_fea_loss += log["g_fea_loss"] * log["cur_batch_size"]
-            g_loss += log["g_loss"] * log["cur_batch_size"]
+            GradCAM_loss += log["GradCAM_loss"] * log["cur_batch_size"]
             fer_loss += log["fer_loss"] * log["cur_batch_size"]
             loss += log["loss"] * log["cur_batch_size"]
             train_accuracy += log["step_acc"]
@@ -164,19 +158,15 @@ def main():
 
             # 控制台输出日志信息
             if (cur_step+1) % args.print_step_freq == 0:
-                print("epoch:[{:03d}/{:03d}]  g_pix_loss:{:.6f}  g_fea_loss:{:.6f}  g_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}"
-                      .format(epoch, args.end_epoch-1, g_pix_loss/batch_cnt, g_fea_loss/batch_cnt, g_loss/batch_cnt,
-                              fer_loss/batch_cnt, loss/batch_cnt, train_accuracy/batch_cnt))
-                pre_write_txt("epoch:[{:03d}/{:03d}]  g_pix_loss:{:.6f}  g_fea_loss:{:.6f}  g_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}"
-                              .format(epoch, args.end_epoch-1, g_pix_loss/batch_cnt, g_fea_loss/batch_cnt,
-                                      g_loss/batch_cnt, fer_loss/batch_cnt, loss/batch_cnt, train_accuracy/batch_cnt), args.log_file)
+                print("epoch:[{:03d}/{:03d}]  GradCAM_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}"
+                      .format(epoch, args.end_epoch-1, GradCAM_loss/batch_cnt, fer_loss/batch_cnt, loss/batch_cnt, train_accuracy/batch_cnt))
+                pre_write_txt("epoch:[{:03d}/{:03d}]  GradCAM_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}"
+                              .format(epoch, args.end_epoch-1, GradCAM_loss/batch_cnt, fer_loss/batch_cnt, loss/batch_cnt, train_accuracy/batch_cnt), args.log_file)
 
             cur_step += 1
 
         # 计算当前epoch训练部分的中间结果
-        g_pix_loss /= batch_cnt
-        g_fea_loss /= batch_cnt
-        g_loss /= batch_cnt
+        GradCAM_loss /= batch_cnt
         fer_loss /= batch_cnt
         loss /= batch_cnt
         train_accuracy /= batch_cnt
@@ -218,10 +208,10 @@ def main():
 
 
         # epoch结束总的输出一下结果
-        print("epoch:[{:03d}]  g_pix_loss:{:.6f}  g_fea_loss:{:.6f}  g_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}  val_accuracy:{:.6f}  best_accuracy:{:.6f}"
-              .format(epoch, g_pix_loss, g_fea_loss, g_loss, fer_loss, loss, train_accuracy, val_accuracy, best_accuracy))
-        pre_write_txt("epoch:[{:03d}]  g_pix_loss:{:.6f}  g_fea_loss:{:.6f}  g_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}  val_accuracy:{:.6f}  best_accuracy:{:.6f}"
-                      .format(epoch, g_pix_loss, g_fea_loss, g_loss, fer_loss, loss, train_accuracy, val_accuracy, best_accuracy), args.log_file)
+        print("epoch:[{:03d}]  GradCAM_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}  val_accuracy:{:.6f}  best_accuracy:{:.6f}"
+              .format(epoch, GradCAM_loss, fer_loss, loss, train_accuracy, val_accuracy, best_accuracy))
+        pre_write_txt("epoch:[{:03d}]  GradCAM_loss:{:.6f}  fer_loss:{:.6f}  loss:{:.6f}  train_accuracy:{:.6f}  val_accuracy:{:.6f}  best_accuracy:{:.6f}"
+                      .format(epoch, GradCAM_loss, fer_loss, loss, train_accuracy, val_accuracy, best_accuracy), args.log_file)
 
 
     print('End of training.')
