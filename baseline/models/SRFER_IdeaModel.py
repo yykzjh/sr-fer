@@ -49,7 +49,9 @@ class SRFERIdeaModel(object):
             if self.opt.GradCAM_weight > 0:
                 GradCAM_cri_type = self.opt.GradCAM_criterion
                 # 定义GradCAM的特征图的损失值的计算方式
-                if GradCAM_cri_type == "l2":
+                if GradCAM_cri_type == 'l1':
+                    self.GradCAM_cri = nn.L1Loss().to(self.device)
+                elif GradCAM_cri_type == "l2":
                     self.GradCAM_cri = nn.MSELoss().to(self.device)
                 else:
                     raise NotImplementedError('Loss type [{:s}] not recognized.'.format(GradCAM_cri_type))
@@ -141,6 +143,8 @@ class SRFERIdeaModel(object):
         :return: 列表和网络输出，存储各层的类激活图heatmap
         """
 
+        # 清空梯度
+        netFER.zero_grad()
         # 先初始化存储梯度的列表
         grad_list = []
         # 初始化存储钩子的列表，用于释放钩子
@@ -189,17 +193,24 @@ class SRFERIdeaModel(object):
             heatmap = pool_grad * feature_list[i]
 
             # 类激活图的通道维度取平均
-            heatmap = torch.mean(heatmap, dim=1)
+            heatmap = torch.mean(heatmap, dim=1, keepdim=True)
             # 类激活图ReLU
-            heatmap = torch.maximum(heatmap, torch.zeros_like(heatmap))
+            nn.ReLU(inplace=True)(heatmap)
             # 类激活图归一化
-            heatmap /= torch.nn.AdaptiveMaxPool2d((1, 1))(heatmap)
+            max_heatmap = torch.nn.AdaptiveMaxPool2d((1, 1))(heatmap)
+            min_heatmap, _ = torch.min(heatmap.view(heatmap.size(0), -1), dim=-1)
+            min_heatmap = min_heatmap.view(-1, 1, 1, 1)
+            heatmap = (heatmap - min_heatmap) / (max_heatmap - min_heatmap + 1e-38)
+            if torch.isnan(heatmap).any():
+                print(heatmap)
             # 保存
-            heatmaps.append(heatmap)
+            heatmaps.append(heatmap.squeeze(1))
 
         # 注销钩子
         for hook in hook_list:
             hook.remove()
+        # 清空梯度
+        netFER.zero_grad()
 
         return heatmaps, out
 
@@ -212,13 +223,10 @@ class SRFERIdeaModel(object):
 
         # G网络前向传播，生成超分辨率图像
         sr_image = self.netG(self.lr_image)
-        # FER网络前向传播，并计算类激活图
-        FER_heatmaps, logic_map = self.cal_GradCAM(sr_image, self.netFER, net_is_pretrain=False)
         # GradCAMFER前向传播，计算类激活图
         GradCAMFER_heatmaps, _ = self.cal_GradCAM(sr_image, self.netGradCAMFER, net_is_pretrain=True)
-        # 网络参数梯度清零
-        for optimizer in self.optimizers:
-            optimizer.zero_grad()
+        # FER网络前向传播，并计算类激活图
+        FER_heatmaps, logic_map = self.cal_GradCAM(sr_image, self.netFER, net_is_pretrain=False)
 
         # 计算类激活图loss
         GradCAM_loss_list = []
@@ -227,6 +235,7 @@ class SRFERIdeaModel(object):
         # 遍历计算l2 loss
         for i, FER_heatmap in enumerate(FER_heatmaps):
             GradCAM_loss_list.append(self.GradCAM_cri(FER_heatmap, GradCAMFER_heatmaps[i]))
+            # print(self.GradCAM_cri(FER_heatmap, GradCAMFER_heatmaps[i]))
         # 计算GradCAM loss均值
         GradCAM_loss = torch.FloatTensor(GradCAM_loss_list).to(self.device).mean()
 

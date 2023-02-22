@@ -13,9 +13,9 @@ from torch import nn
 # 训练过的模型路径
 # resume_path = r""
 # 输入图像路径
-single_img_path = r'0809.png'
+single_img_path = r'./images/0809.png'
 # 绘制的热力图存储路径
-save_path = r'result.png'
+save_path = r'0809.png'
 # 网络层的层名列表, 需要根据实际使用网络进行修改
 layers_names = ['conv1', 'bn1', 'relu', 'maxpool', 'layer1', 'layer2', 'layer3', 'layer4', 'avgpool']
 features_grad = 0
@@ -98,6 +98,7 @@ def draw_CAM(model, img_path, save_path, transform=None, visual_heatmap=False, o
     heatmap = np.mean(heatmap, axis=0)
     heatmap = np.maximum(heatmap, 0)
     heatmap /= np.max(heatmap)
+    print(heatmap)
 
     # 可视化原始热力图
     if visual_heatmap:
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     ])
     # 构建模型并加载预训练参数
     model = resnet18(pretrained=True).cuda()
-    draw_CAM(model, single_img_path, "layer1.png", transform=transform, visual_heatmap=True, out_layer="layer1")
-    draw_CAM(model, single_img_path, "layer2.png", transform=transform, visual_heatmap=True, out_layer="layer2")
-    draw_CAM(model, single_img_path, "layer3.png", transform=transform, visual_heatmap=True, out_layer="layer3")
-    draw_CAM(model, single_img_path, "layer4.png", transform=transform, visual_heatmap=True, out_layer="layer4")
+    # draw_CAM(model, single_img_path, "layer1.png", transform=transform, visual_heatmap=True, out_layer="layer1")
+    # draw_CAM(model, single_img_path, "layer2.png", transform=transform, visual_heatmap=True, out_layer="layer2")
+    # draw_CAM(model, single_img_path, "layer3.png", transform=transform, visual_heatmap=True, out_layer="layer3")
+    draw_CAM(model, single_img_path, save_path, transform=transform, visual_heatmap=True, out_layer="layer2")

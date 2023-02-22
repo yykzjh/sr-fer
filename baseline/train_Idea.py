@@ -45,7 +45,7 @@ def main():
 
     # GradCAM损失函数的计算方式和加权值
     parser.add_argument('--GradCAM_criterion', type=str, default='l2')
-    parser.add_argument('--GradCAM_weight', type=float, default=0.8)
+    parser.add_argument('--GradCAM_weight', type=float, default=10)
     # 分类损失函数计算方式和加权值
     parser.add_argument('--fer_criterion', type=str, default='lsr')  # Label Smoothing Regularization(LSR),标签平滑正则化
     parser.add_argument('--FER_weight', type=float, default=1)
@@ -103,8 +103,8 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # 加载数据集
-    train_loader = create_dataloader(args, n_threads=8, is_train=True, dataset="SRFER")
-    val_loader = create_dataloader(args, n_threads=8, is_train=False, dataset="SRFER")
+    train_loader = create_dataloader(args, n_threads=2, is_train=True, dataset="SRFER")
+    val_loader = create_dataloader(args, n_threads=2, is_train=False, dataset="SRFER")
 
     # 创建模型
     model = SRFERIdeaModel(args, is_train=True)
